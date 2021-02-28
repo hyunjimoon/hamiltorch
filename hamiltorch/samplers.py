@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 from enum import Enum
-
 from numpy import pi
+from math import tanh
 from . import util
 
 # Docstring:
@@ -29,6 +29,7 @@ class Metric(Enum):
     HESSIAN = 1
     SOFTABS = 2
     JACOBIAN_DIAG = 3
+    HYPERELLIP = 4
 
 def collect_gradients(log_prob, params):
     """Returns the parameters and the corresponding gradients (params.grad).
@@ -94,17 +95,21 @@ def fisher(params, log_prob_func=None, jitter=None, normalizing_const=1., softab
         jac = util.jacobian(log_prob, params, create_graph=True, return_inputs=False)
         jac = torch.cat([j.flatten() for j in jac])
         # util.flatten(jac).view(1,-1)
-        fish = torch.matmul(jac.view(-1,1),jac.view(1,-1)).diag().diag()#/ normalizing_const #.diag().diag() / normalizing_const
+        fish = torch.matmul(jac.view(-1, 1), jac.view(1, -1)).diag().diag()  # / normalizing_const #.diag().diag() / normalizing_const
+    elif metric == Metric.HYPERELLIP:
+        hess = util.hessian(log_prob.float(), params, create_graph=True, return_inputs=False)
+        #print("hess, param:", hess, param) debug
+        fish = - hess / (1 - (tanh(torch.sqrt(torch.sum(params * params))))**2)**2  # / normalizing_const
     else:
         hess = util.hessian(log_prob.float(), params, create_graph=True, return_inputs=False)
-        fish = - hess #/ normalizing_const
+        fish = - hess # / normalizing_const
     if util.has_nan_or_inf(fish):
         print('Invalid hessian: {}, params: {}'.format(fish, params))
         raise util.LogProbError()
     if jitter is not None:
         params_n_elements = fish.shape[0]
         fish += (torch.eye(params_n_elements) * torch.rand(params_n_elements) * jitter).to(fish.device)
-    if (metric is Metric.HESSIAN) or (metric is Metric.JACOBIAN_DIAG):
+    if (metric is Metric.HESSIAN) or (metric is Metric.JACOBIAN_DIAG) or (metric is Metric.HYPERELLIP):
         return fish, None
     elif metric == Metric.SOFTABS:
         eigenvalues, eigenvectors = torch.symeig(fish, eigenvectors=True)
@@ -956,10 +961,10 @@ def sample(log_prob_func, params_init, num_samples=10, num_steps_per_sample=10, 
                 leapfrog_params = leapfrog_params[0]
                 leapfrog_momenta = leapfrog_momenta[0]
 
+
                 # This is trying the new (unbiased) version:
                 new_ham = rm_hamiltonian(params, momentum, log_prob_func, jitter, normalizing_const, softabs_const=softabs_const, sampler=sampler, integrator=integrator, metric=metric) # In rm sampler so no need for inv_mass
                 # new_ham = hamiltonian([params,params_copy] , [momentum,momentum_copy], log_prob_func, jitter=jitter, softabs_const=softabs_const, explicit_binding_const=explicit_binding_const, normalizing_const=normalizing_const, sampler=sampler, integrator=integrator, metric=metric)
-
             else:
                 params = leapfrog_params[-1].to(device).detach().requires_grad_()
                 momentum = leapfrog_momenta[-1].to(device)
