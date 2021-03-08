@@ -98,9 +98,8 @@ def fisher(params, log_prob_func=None, jitter=None, normalizing_const=1., softab
         fish = torch.matmul(jac.view(-1, 1), jac.view(1, -1)).diag().diag()  # / normalizing_const #.diag().diag() / normalizing_const
     elif metric == Metric.HYPERELLIP:
         hess = util.hessian(log_prob.float(), params, create_graph=True, return_inputs=False)
-        unit_params = params / torch.norm(params)
-        fish = - hess * (1 - (tanh(torch.sqrt(torch.sum(unit_params * unit_params))))**2)**2  # / normalizing_const
-        print("hess", hess, '#####fish', fish, '#####param', unit_params)
+        fish = - hess * (1 - (tanh(torch.sqrt(torch.sum(params * params))))**2)**2  # / normalizing_const
+        print("hess", hess, '#####fish', fish, '#####param', params)
     else:
         hess = util.hessian(log_prob.float(), params, create_graph=True, return_inputs=False)
         fish = - hess # / normalizing_const
